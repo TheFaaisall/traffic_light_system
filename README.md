@@ -4,11 +4,21 @@ A real-time embedded systems project built in Python, controlling physical traff
 
 ---
 
+## Hardware
+
+| Traffic Light Board | Countdown Display Board |
+|---|---|
+| ![Traffic light LEDs, pedestrian button, and Arduino UNO on breadboard](trafficlight.png) | ![4-digit 7-segment countdown display and Arduino UNO on breadboard](sevseg.png) |
+
+The left board holds the Red, Yellow, and Green LEDs along with the pedestrian push button. The right board holds the 4-digit 7-segment display that shows the countdown timer for each phase.
+
+---
+
 ## Overview
 
-This project implements a fully functional traffic light controller that runs on physical hardware. Python communicates with the Arduino UNO over USB using the Firmata protocol, giving direct control over all GPIO pins from a high-level software layer. The system manages a complete traffic light sequence, a 4-digit countdown timer displayed on a 7-segment LED display, and a pedestrian crossing request button.
+This project implements a fully functional traffic light controller that runs on physical hardware. Python communicates with the Arduino UNO over USB using the Firmata protocol, giving direct control over all GPIO pins from a high-level software layer.
 
-An adaptive timing agent adjusts phase durations based on time-of-day traffic density modelling, reflecting how real-world traffic management systems operate.
+The system manages a complete traffic light sequence, a 4-digit countdown timer on a 7-segment LED display, and a pedestrian crossing request button. An adaptive timing agent adjusts phase durations based on time-of-day traffic density modelling, reflecting how real traffic management systems like VicRoads SCATS operate.
 
 ---
 
@@ -19,95 +29,118 @@ An adaptive timing agent adjusts phase durations based on time-of-day traffic de
 - Adaptive AI agent that calculates green and red phase durations based on simulated traffic density, modelled on Melbourne peak-hour patterns
 - 4-digit 7-segment LED display with multiplexed refresh at 125Hz for real-time countdown visibility
 - Multi-threaded architecture with dedicated threads for display refresh and pedestrian button polling, decoupled from the main control loop
-- Simulation mode for full software testing without physical hardware
-- Modular tool-wrapper pattern for hardware abstraction, enabling clean separation between logic and physical I/O
-
----
-
-## Hardware
-
-- Arduino UNO microcontroller
-- Red, Yellow, and Green LEDs with current-limiting resistors
-- Pedestrian push button with pull-up resistor
-- 4-digit 7-segment LED display (common cathode)
-- Breadboard and jumper wires
+- Simulation mode for full software testing without physical hardware connected
+- Modular tool-wrapper pattern for hardware abstraction, separating logic from physical I/O
 
 ---
 
 ## Software Stack
 
 - Python 3
-- pyfirmata2 — serial communication with Arduino over USB
-- threading — concurrent display refresh and button polling
-- dataclasses, enum — typed system state and configuration management
+- pyfirmata2 for serial communication with Arduino over USB
+- threading for concurrent display refresh and button polling
+- dataclasses and enum for typed system state and configuration management
 
 ---
 
-## System Architecture
+## Project Structure
 
-The codebase follows a layered design:
+The codebase is split across nine files. Each file has one responsibility and communicates with others through a shared context object.
 
-- Configuration layer — all pin mappings and timing constants in one place
-- Hardware abstraction layer — tool-wrapper functions resolve logical pin names to physical hardware handles, keeping all hardware-specific code isolated
-- State machine layer — TrafficLightController manages phase transitions and enforces the all-red safety clearance gap between phases, consistent with Australian road rules
-- AI agent layer — AdaptiveTimingAgent models traffic density from time-of-day data and returns dynamic phase durations each cycle
-- Display layer — a background thread multiplexes the 7-segment display independently of the control loop
-- Input layer — a background thread polls the pedestrian button at 100ms intervals without blocking the main sequence
+```
+traffic_light/
+    main.py         Entry point. Wires all modules together and starts the system.
+    config.py       All constants: pin mapping, timing values, display patterns.
+    context.py      SystemContext dataclass and TrafficState enum.
+    wrappers.py     Tool wrappers that resolve pin names to hardware objects.
+    hardware.py     All pyfirmata2 calls: pin setup, LED writes, button reads.
+    display.py      7-segment display multiplexing and countdown loop.
+    agent.py        Adaptive timing agent based on Melbourne peak-hour rules.
+    controller.py   Traffic light state machine and phase transition logic.
+    button.py       Pedestrian button polling thread.
+```
+
+No file exceeds 200 lines. The largest is controller.py at 180 lines.
+
+---
+
+## Module Dependency Map
+
+```
+config.py       (no dependencies)
+context.py      (no dependencies)
+wrappers.py     --> context
+hardware.py     --> config, context, wrappers
+display.py      --> config, context
+agent.py        --> config
+controller.py   --> config, context, hardware, agent
+button.py       --> context, hardware
+main.py         --> all modules
+```
+
+Dependencies flow in one direction only. No circular imports.
 
 ---
 
 ## Traffic Light Sequence
 
 ```
-GREEN (adaptive 20-60s) → AMBER (4s) → ALL RED (2s) → RED (adaptive 20-60s)
-└── If pedestrian button pressed: PED WALK (15s) → PED FLASH (5s) → repeat
+GREEN (adaptive 20-60s) -> AMBER (4s) -> ALL RED (2s) -> RED (adaptive 20-60s)
+                                                              |
+                                         if button pressed -> PED WALK (15s) -> PED FLASH (5s)
+                                                              |
+                                                           repeat
 ```
 
-The all-red clearance phase is a deliberate design choice aligned with Australian road safety standards, allowing vehicles that entered on a late amber signal to clear the intersection before the next phase begins.
+The All-Red clearance phase is a deliberate design decision aligned with Australian road safety standards. It allows any vehicle that entered on a late amber signal to clear the intersection before the next phase begins.
 
 ---
 
 ## Setup and Installation
 
-1. Upload the StandardFirmata sketch to the Arduino UNO via Arduino IDE (File > Examples > Firmata > StandardFirmata)
+1. Upload the StandardFirmata sketch to the Arduino UNO via Arduino IDE under File, Examples, Firmata, StandardFirmata.
+
 2. Install the Python dependency:
 
 ```bash
 pip install pyfirmata2
 ```
 
-3. Set your serial port in the configuration at the top of the file:
+3. Set your serial port in config.py:
 
 ```python
-ARDUINO_PORT = "COM3"        # Windows
-ARDUINO_PORT = "/dev/ttyACM0"  # Linux
+ARDUINO_PORT = "COM3"           # Windows
+ARDUINO_PORT = "/dev/ttyACM0"   # Linux
 ARDUINO_PORT = "/dev/cu.usbmodemXXXX"  # macOS
 ```
 
-4. Update PIN_CONFIG to match your wiring if needed
-5. Set SIMULATION_MODE = False to run on real hardware
+4. Update PIN_CONFIG in config.py if your wiring differs from the defaults.
+
+5. Set SIMULATION_MODE = False in config.py to run on real hardware.
+
 6. Run:
 
 ```bash
-python traffic_light_system.py
+python main.py
 ```
 
-To test without hardware, keep SIMULATION_MODE = True. The full state machine, agent, and countdown logic run in terminal with visual output.
+To test without hardware, keep SIMULATION_MODE = True. The full state machine, agent logic, and countdown run in the terminal with text output.
 
 ---
 
 ## Skills Demonstrated
 
 - Embedded systems design and hardware-software integration
-- Real-time control systems and concurrent programming
-- Python software architecture and object-oriented design
-- Sensor and actuator interfacing via serial communication protocols
-- AI-driven adaptive control logic
-- Finite state machine implementation
+- Real-time control systems and concurrent programming in Python
+- Modular software architecture across multiple communicating files
+- Serial communication protocol implementation via pyfirmata2
+- Finite state machine design for safety-critical sequencing
+- Adaptive AI agent design for dynamic timing control
+- Sensor and actuator interfacing on Arduino UNO
 - Applied robotics and mechatronics engineering principles
 
 ---
 
 ## Background
 
-Built as part of my Bachelor of Engineering (Robotics and Mechatronics, AI specialisation) at Monash University, Melbourne. This project bridges my hardware background with Python-based AI system design, an area I actively develop through both academic and personal projects.
+Built as part of my Bachelor of Engineering (Robotics and Mechatronics, AI specialisation) at Monash University, Melbourne. This project connects hardware interfacing with structured Python software design and adaptive AI control logic, areas I actively develop through both academic and personal projects.
